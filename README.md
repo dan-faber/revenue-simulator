@@ -1,6 +1,6 @@
-# Revenue Simulator
+# Pipeline Simulator
 
-Client-side sales planning tool for modeling annual revenue. Add deal "chips" across 12 months, compare 3 scenarios, track progress against annual goals.
+Sales pipeline planning tool. Add recurring and one-off deals across 12 months, track progress against annual goals.
 
 ## Setup
 

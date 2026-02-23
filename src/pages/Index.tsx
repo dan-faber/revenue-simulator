@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
-  SCENARIO_NAMES,
   DEFAULT_BASELINE,
   nextId,
   calcAnnualTotal,
@@ -9,29 +8,31 @@ import {
   ensureBaseline12,
   type Scenario,
 } from '@/config/simulator';
-import ScenarioTabs from '@/components/ScenarioTabs';
 import RevenueGrid from '@/components/RevenueGrid';
 import StrategyPanel from '@/components/StrategyPanel';
 import GoalInput from '@/components/GoalInput';
-import { TrendingUp, RotateCcw } from 'lucide-react';
+import { TrendingUp, RotateCcw, Trash2 } from 'lucide-react';
 
-const STORAGE_KEY = 'revenue-simulator-scenarios';
-const STORAGE_VERSION = 1;
+const STORAGE_KEY = 'pipeline-simulator';
+const STORAGE_VERSION = 2;
 
-const createScenarios = (): Scenario[] =>
-  SCENARIO_NAMES.map((name) => ({
-    name,
-    accounts: [],
-    baseline: [...DEFAULT_BASELINE],
-    goal: null,
-    startingMRR: 0,
-  }));
+const createScenario = (): Scenario => ({
+  name: 'Pipeline',
+  accounts: [],
+  oneOffs: [],
+  baseline: [...DEFAULT_BASELINE],
+  goal: null,
+  startingMRR: 0,
+});
 
-function sanitizeScenario(s: any, fallbackName: string): Scenario {
+function sanitizeScenario(s: any): Scenario {
   return {
-    name: typeof s?.name === 'string' ? s.name : fallbackName,
+    name: typeof s?.name === 'string' ? s.name : 'Pipeline',
     accounts: Array.isArray(s?.accounts)
       ? s.accounts.filter((a: any) => typeof a?.id === 'string' && Number.isFinite(a?.value) && Number.isFinite(a?.month))
+      : [],
+    oneOffs: Array.isArray(s?.oneOffs)
+      ? s.oneOffs.filter((a: any) => typeof a?.id === 'string' && Number.isFinite(a?.value) && Number.isFinite(a?.month))
       : [],
     baseline: ensureBaseline12(s?.baseline),
     goal: s?.goal !== null && Number.isFinite(Number(s?.goal)) ? Number(s.goal) : null,
@@ -39,104 +40,120 @@ function sanitizeScenario(s: any, fallbackName: string): Scenario {
   };
 }
 
-function loadScenarios(): Scenario[] {
+function loadScenario(): Scenario {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Version check — wipe on schema mismatch
-      if (parsed?.version !== STORAGE_VERSION || !Array.isArray(parsed?.scenarios)) {
+      if (parsed?.version !== STORAGE_VERSION || !parsed?.scenario) {
         localStorage.removeItem(STORAGE_KEY);
-        return createScenarios();
+        return createScenario();
       }
-      return SCENARIO_NAMES.map((name, i) =>
-        sanitizeScenario(parsed.scenarios[i], name),
-      );
+      return sanitizeScenario(parsed.scenario);
     }
   } catch { /* corrupted data — fall through */ }
-  return createScenarios();
+  return createScenario();
 }
 
-function saveScenarios(scenarios: Scenario[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, scenarios }));
+function saveScenario(scenario: Scenario) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, scenario }));
 }
 
 const SYSTEM_MONTH = new Date().getMonth();
 
 const Index = () => {
-  const [scenarios, setScenarios] = useState<Scenario[]>(loadScenarios);
-  const [activeScenario, setActiveScenario] = useState(0);
+  const [scenario, setScenario] = useState<Scenario>(loadScenario);
 
   // Autosave on every change
   useEffect(() => {
-    saveScenarios(scenarios);
-  }, [scenarios]);
+    saveScenario(scenario);
+  }, [scenario]);
 
-  const current = scenarios[activeScenario] ?? scenarios[0];
-
-  const updateCurrentScenario = useCallback(
+  const update = useCallback(
     (updater: (s: Scenario) => Scenario) => {
-      setScenarios((prev) =>
-        prev.map((s, i) => (i === activeScenario ? updater(s) : s)),
-      );
+      setScenario((prev) => updater(prev));
     },
-    [activeScenario],
+    [],
   );
 
   const handleAddAccount = useCallback(
     (monthIndex: number, value: number) => {
-      updateCurrentScenario((s) => ({
+      update((s) => ({
         ...s,
         accounts: [...s.accounts, { month: monthIndex, value, id: nextId() }],
       }));
     },
-    [updateCurrentScenario],
+    [update],
   );
 
   const handleRemoveAccount = useCallback(
     (id: string) => {
-      updateCurrentScenario((s) => ({
+      update((s) => ({
         ...s,
         accounts: s.accounts.filter((a) => a.id !== id),
       }));
     },
-    [updateCurrentScenario],
+    [update],
+  );
+
+  const handleAddOneOff = useCallback(
+    (monthIndex: number, value: number) => {
+      update((s) => ({
+        ...s,
+        oneOffs: [...s.oneOffs, { month: monthIndex, value, id: nextId() }],
+      }));
+    },
+    [update],
+  );
+
+  const handleRemoveOneOff = useCallback(
+    (id: string) => {
+      update((s) => ({
+        ...s,
+        oneOffs: s.oneOffs.filter((a) => a.id !== id),
+      }));
+    },
+    [update],
   );
 
   const handleSetGoal = useCallback(
     (goal: number | null) => {
-      updateCurrentScenario((s) => ({ ...s, goal }));
+      update((s) => ({ ...s, goal }));
     },
-    [updateCurrentScenario],
+    [update],
   );
 
   const handleReset = useCallback(() => {
-    updateCurrentScenario((s) => ({ ...s, accounts: [], goal: null, startingMRR: 0, baseline: [...DEFAULT_BASELINE] }));
-  }, [updateCurrentScenario]);
+    update(() => createScenario());
+  }, [update]);
+
+  const handleClearDeals = useCallback(() => {
+    update((s) => ({ ...s, accounts: [], oneOffs: [], baseline: [...DEFAULT_BASELINE] }));
+  }, [update]);
 
   const currentMonth = SYSTEM_MONTH;
 
   const handleSetBaseline = useCallback(
     (monthIndex: number, value: number) => {
-      updateCurrentScenario((s) => {
+      update((s) => {
         const newBaseline = [...s.baseline];
         newBaseline[monthIndex] = value;
         return { ...s, baseline: newBaseline };
       });
     },
-    [updateCurrentScenario],
+    [update],
   );
 
   const handleSetStartingMRR = useCallback(
     (value: number) => {
-      updateCurrentScenario((s) => ({ ...s, startingMRR: value }));
+      update((s) => ({ ...s, startingMRR: value }));
     },
-    [updateCurrentScenario],
+    [update],
   );
 
-  const effectiveBaseline = current.baseline.map((b) => b + current.startingMRR);
-  const annualTotal = calcAnnualTotal(effectiveBaseline, current.accounts);
-  const accountCount = current.accounts.length;
+  const effectiveBaseline = scenario.baseline.map((b) => b + scenario.startingMRR);
+  const annualTotal = calcAnnualTotal(effectiveBaseline, scenario.accounts, scenario.oneOffs);
+  const dealCount = scenario.accounts.length + scenario.oneOffs.length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -149,7 +166,7 @@ const Index = () => {
             </div>
             <div>
               <h1 className="text-base font-semibold text-foreground leading-tight">
-                Revenue Simulator
+                Pipeline Simulator
               </h1>
               <p className="text-[11px] text-muted-foreground">
                 Close deals → see impact → steer your year
@@ -160,7 +177,7 @@ const Index = () => {
             <div className="text-right">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Deals</div>
               <div className="text-lg font-mono font-semibold text-foreground">
-                {accountCount}
+                {dealCount}
               </div>
             </div>
             <div className="text-right">
@@ -179,25 +196,34 @@ const Index = () => {
           {/* Left: main grid area */}
           <div className="flex-1 min-w-0 space-y-3">
             {/* Controls bar */}
-            <div className="flex items-center justify-between">
-              <ScenarioTabs activeIndex={activeScenario} onChange={setActiveScenario} />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={handleClearDeals}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-md hover:bg-secondary transition-colors"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear Deals
+              </button>
               <button
                 onClick={handleReset}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-md hover:bg-secondary transition-colors"
               >
                 <RotateCcw className="w-3 h-3" />
-                Reset
+                Reset All
               </button>
             </div>
 
             {/* Revenue grid */}
             <RevenueGrid
-              baseline={current.baseline}
-              accounts={current.accounts}
-              goal={current.goal}
-              startingMRR={current.startingMRR}
+              baseline={scenario.baseline}
+              accounts={scenario.accounts}
+              oneOffs={scenario.oneOffs}
+              goal={scenario.goal}
+              startingMRR={scenario.startingMRR}
               onAddAccount={handleAddAccount}
               onRemoveAccount={handleRemoveAccount}
+              onAddOneOff={handleAddOneOff}
+              onRemoveOneOff={handleRemoveOneOff}
               onSetBaseline={handleSetBaseline}
               onSetStartingMRR={handleSetStartingMRR}
             />
@@ -208,16 +234,17 @@ const Index = () => {
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
               Goal
             </div>
-            <GoalInput value={current.goal} onChange={handleSetGoal} />
+            <GoalInput value={scenario.goal} onChange={handleSetGoal} />
             <div className="border-t border-border pt-3">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">
                 Strategy Summary
               </div>
               <StrategyPanel
-                baseline={current.baseline}
-                accounts={current.accounts}
-                goal={current.goal}
-                startingMRR={current.startingMRR}
+                baseline={scenario.baseline}
+                accounts={scenario.accounts}
+                oneOffs={scenario.oneOffs}
+                goal={scenario.goal}
+                startingMRR={scenario.startingMRR}
                 currentMonth={currentMonth}
               />
             </div>

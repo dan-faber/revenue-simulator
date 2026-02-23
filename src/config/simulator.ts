@@ -8,17 +8,14 @@ export const MONTHS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
-/** Preset deal sizes users can add per month */
-export const DEAL_SIZES = [1_500, 2_500, 5_000, 10_000] as const;
+/** Preset recurring deal sizes */
+export const DEAL_SIZES = [1_500, 2_500, 3_500, 5_000, 6_000, 7_000] as const;
+
+/** Preset one-off deal sizes */
+export const ONE_OFF_SIZES = [1_500, 2_500, 3_500, 5_000, 6_000, 7_000] as const;
 
 /** Monthly baseline revenue (index 0 = Jan, 11 = Dec) */
 export const DEFAULT_BASELINE: number[] = Array(12).fill(0);
-
-/** Scenario labels */
-export const SCENARIO_NAMES = ['Scenario A', 'Scenario B', 'Scenario C'] as const;
-
-/** Average deal size used for goal gap calculations */
-export const AVG_DEAL_SIZE = 5_000;
 
 // ============================================================
 // TYPES
@@ -33,6 +30,7 @@ export interface Account {
 export interface Scenario {
   name: string;
   accounts: Account[];
+  oneOffs: Account[];
   baseline: number[];
   goal: number | null;
   startingMRR: number;
@@ -89,13 +87,21 @@ export function calcAddedRevenue(accounts: Account[], monthIndex: number): numbe
     .reduce((sum, a) => sum + a.value, 0);
 }
 
-/** Monthly total = baseline + all active accounts */
+/** Revenue from one-off deals in exactly this month (no carryover) */
+export function calcOneOffRevenue(oneOffs: Account[], monthIndex: number): number {
+  return oneOffs
+    .filter((a) => a.month === monthIndex)
+    .reduce((sum, a) => sum + a.value, 0);
+}
+
+/** Monthly total = baseline + recurring added + one-off */
 export function calcMonthlyTotal(
   baseline: number[],
   accounts: Account[],
   monthIndex: number,
+  oneOffs: Account[] = [],
 ): number {
-  return (baseline[monthIndex] || 0) + calcAddedRevenue(accounts, monthIndex);
+  return (baseline[monthIndex] || 0) + calcAddedRevenue(accounts, monthIndex) + calcOneOffRevenue(oneOffs, monthIndex);
 }
 
 /** Running total up to and including the given month */
@@ -103,17 +109,18 @@ export function calcRunningTotal(
   baseline: number[],
   accounts: Account[],
   upToMonth: number,
+  oneOffs: Account[] = [],
 ): number {
   let total = 0;
   for (let i = 0; i <= upToMonth; i++) {
-    total += calcMonthlyTotal(baseline, accounts, i);
+    total += calcMonthlyTotal(baseline, accounts, i, oneOffs);
   }
   return total;
 }
 
 /** Annual total (sum of all 12 months) */
-export function calcAnnualTotal(baseline: number[], accounts: Account[]): number {
-  return calcRunningTotal(baseline, accounts, 11);
+export function calcAnnualTotal(baseline: number[], accounts: Account[], oneOffs: Account[] = []): number {
+  return calcRunningTotal(baseline, accounts, 11, oneOffs);
 }
 
 // ============================================================
@@ -134,9 +141,10 @@ export function calcTrackingStatus(
   accounts: Account[],
   goal: number | null,
   currentMonth: number,
+  oneOffs: Account[] = [],
 ): TrackingStatus {
   if (!goal || goal <= 0) return 'none';
-  const running = calcRunningTotal(baseline, accounts, currentMonth);
+  const running = calcRunningTotal(baseline, accounts, currentMonth, oneOffs);
   const expectedPace = (goal * (currentMonth + 1)) / 12;
   const ratio = running / expectedPace;
   if (ratio >= 0.95) return 'on-track';

@@ -1,8 +1,10 @@
 import {
   MONTHS,
+  ONE_OFF_SIZES,
   calcNewRevenueThisMonth,
   calcCarryoverRevenue,
   calcAddedRevenue,
+  calcOneOffRevenue,
   calcMonthlyTotal,
   calcRunningTotal,
   calcAnnualTotal,
@@ -18,10 +20,13 @@ import { Target } from 'lucide-react';
 interface RevenueGridProps {
   baseline: number[];
   accounts: Account[];
+  oneOffs: Account[];
   goal: number | null;
   startingMRR: number;
   onAddAccount: (monthIndex: number, value: number) => void;
   onRemoveAccount: (id: string) => void;
+  onAddOneOff: (monthIndex: number, value: number) => void;
+  onRemoveOneOff: (id: string) => void;
   onSetBaseline: (monthIndex: number, value: number) => void;
   onSetStartingMRR: (value: number) => void;
 }
@@ -34,24 +39,30 @@ function statusClass(status: TrackingStatus): string {
   return '';
 }
 
-const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRemoveAccount, onSetBaseline, onSetStartingMRR }: RevenueGridProps) => {
+const RevenueGrid = ({
+  baseline, accounts, oneOffs, goal, startingMRR,
+  onAddAccount, onRemoveAccount, onAddOneOff, onRemoveOneOff,
+  onSetBaseline, onSetStartingMRR,
+}: RevenueGridProps) => {
   // effectiveBaseline folds startingMRR into each month so existing calc functions just work
   const effectiveBaseline = baseline.map((b) => b + startingMRR);
 
   const monthlyNew = MONTHS.map((_, i) => calcNewRevenueThisMonth(accounts, i));
   const monthlyCarry = MONTHS.map((_, i) => calcCarryoverRevenue(accounts, i));
   const monthlyAdded = MONTHS.map((_, i) => calcAddedRevenue(accounts, i));
-  const monthlyTotals = MONTHS.map((_, i) => calcMonthlyTotal(effectiveBaseline, accounts, i));
-  const runningTotals = MONTHS.map((_, i) => calcRunningTotal(effectiveBaseline, accounts, i));
-  const annualTotal = calcAnnualTotal(effectiveBaseline, accounts);
+  const monthlyOneOff = MONTHS.map((_, i) => calcOneOffRevenue(oneOffs, i));
+  const monthlyTotals = MONTHS.map((_, i) => calcMonthlyTotal(effectiveBaseline, accounts, i, oneOffs));
+  const runningTotals = MONTHS.map((_, i) => calcRunningTotal(effectiveBaseline, accounts, i, oneOffs));
+  const annualTotal = calcAnnualTotal(effectiveBaseline, accounts, oneOffs);
   const totalBaseline = effectiveBaseline.reduce((a, b) => a + b, 0);
-  const totalAdded = annualTotal - totalBaseline;
+  const totalAdded = monthlyAdded[11] || 0;
   const totalNew = monthlyNew.reduce((a, b) => a + b, 0);
   const totalCarry = monthlyCarry.reduce((a, b) => a + b, 0);
+  const totalOneOff = monthlyOneOff.reduce((a, b) => a + b, 0);
 
   // Goal tracking per month
   const statuses: TrackingStatus[] = MONTHS.map((_, i) =>
-    calcTrackingStatus(effectiveBaseline, accounts, goal, i),
+    calcTrackingStatus(effectiveBaseline, accounts, goal, i, oneOffs),
   );
 
   // Goal gap
@@ -84,11 +95,11 @@ const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRe
           </tr>
         </thead>
         <tbody>
-          {/* Starting MRR */}
+          {/* Starting Recurring */}
           <tr>
             <td className="grid-cell text-xs font-medium sticky left-0 bg-card z-10 text-muted-foreground">
               <div className="flex items-center gap-1">
-                <span>Starting MRR</span>
+                <span>Starting Recurring</span>
                 <div className="relative ml-auto">
                   <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono">$</span>
                   <input
@@ -151,10 +162,10 @@ const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRe
             </td>
           </tr>
 
-          {/* Add Accounts (interactive) */}
+          {/* Add Recurring Deals */}
           <tr>
             <td className="grid-cell text-xs font-medium sticky left-0 bg-card z-10">
-              Add Deals
+              Recurring Deals
             </td>
             {MONTHS.map((_, i) => (
               <td key={i} className="grid-cell align-top p-1">
@@ -169,7 +180,7 @@ const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRe
             <td className="grid-cell" />
           </tr>
 
-          {/* New Revenue This Month */}
+          {/* New Recurring This Month */}
           <tr>
             <td className="grid-cell text-xs font-medium sticky left-0 bg-card z-10 text-muted-foreground">
               New This Month
@@ -190,7 +201,7 @@ const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRe
               Carryover
             </td>
             {monthlyCarry.map((val, i) => (
-              <td key={i} className={`grid-cell grid-number text-center text-xs ${val > 0 ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+              <td key={i} className="grid-cell grid-number text-center text-xs text-muted-foreground">
                 {val > 0 ? formatCurrency(val) : '---'}
               </td>
             ))}
@@ -199,10 +210,10 @@ const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRe
             </td>
           </tr>
 
-          {/* Total Added */}
+          {/* Added Recurring Revenue */}
           <tr className="bg-accent/30">
             <td className="grid-cell text-xs font-semibold sticky left-0 z-10" style={{ background: 'hsl(var(--accent) / 0.3)' }}>
-              Added Revenue
+              Added Recurring
             </td>
             {monthlyAdded.map((val, i) => (
               <td key={i} className={`grid-cell grid-number text-center ${val > 0 ? 'revenue-positive font-semibold' : ''}`}>
@@ -211,6 +222,27 @@ const RevenueGrid = ({ baseline, accounts, goal, startingMRR, onAddAccount, onRe
             ))}
             <td className={`grid-cell grid-number text-center font-bold ${totalAdded > 0 ? 'revenue-positive' : ''}`}>
               {totalAdded > 0 ? `+${formatCurrency(totalAdded)}` : '---'}
+            </td>
+          </tr>
+
+          {/* One-Off Deals */}
+          <tr>
+            <td className="grid-cell text-xs font-medium sticky left-0 bg-card z-10">
+              One-Off Deals
+            </td>
+            {MONTHS.map((_, i) => (
+              <td key={i} className="grid-cell align-top p-1">
+                <DealChips
+                  monthIndex={i}
+                  accounts={oneOffs}
+                  sizes={ONE_OFF_SIZES}
+                  onAdd={onAddOneOff}
+                  onRemove={onRemoveOneOff}
+                />
+              </td>
+            ))}
+            <td className={`grid-cell grid-number text-center font-semibold ${totalOneOff > 0 ? 'revenue-positive' : ''}`}>
+              {totalOneOff > 0 ? `+${formatCurrency(totalOneOff)}` : '---'}
             </td>
           </tr>
 

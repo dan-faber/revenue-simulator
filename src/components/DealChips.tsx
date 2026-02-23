@@ -4,13 +4,14 @@ import { DEAL_SIZES, formatDealSize, type Account } from '@/config/simulator';
 interface DealChipsProps {
   monthIndex: number;
   accounts: Account[];
+  sizes?: readonly number[];
   onAdd: (monthIndex: number, value: number) => void;
   onRemove: (id: string) => void;
 }
 
-const DealChips = ({ monthIndex, accounts, onAdd, onRemove }: DealChipsProps) => {
+const DealChips = ({ monthIndex, accounts, sizes = DEAL_SIZES, onAdd, onRemove }: DealChipsProps) => {
   const monthAccounts = accounts.filter((a) => a.month === monthIndex);
-  const countBySize = DEAL_SIZES.reduce(
+  const countBySize = sizes.reduce(
     (acc, size) => {
       acc[size] = monthAccounts.filter((a) => a.value === size).length;
       return acc;
@@ -20,7 +21,7 @@ const DealChips = ({ monthIndex, accounts, onAdd, onRemove }: DealChipsProps) =>
 
   return (
     <div className="flex flex-col gap-0.5">
-      {DEAL_SIZES.map((size) => {
+      {sizes.map((size) => {
         const count = countBySize[size] || 0;
         const lastAccount = monthAccounts.filter((a) => a.value === size).pop();
         return (
@@ -28,7 +29,7 @@ const DealChips = ({ monthIndex, accounts, onAdd, onRemove }: DealChipsProps) =>
             <button
               onClick={() => onAdd(monthIndex, size)}
               className={`deal-chip flex-1 justify-center ${count > 0 ? 'deal-chip-active' : ''}`}
-              title={`Add ${formatDealSize(size)} account`}
+              title={`Add ${formatDealSize(size)} deal`}
             >
               <Plus className="w-2.5 h-2.5 shrink-0 opacity-40" />
               <span className="truncate">

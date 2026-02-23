@@ -1,22 +1,16 @@
 import {
-  MONTHS,
-  AVG_DEAL_SIZE,
   calcAnnualTotal,
-  calcMonthlyTotal,
-  calcRevenueGap,
   calcTrackingStatus,
-  findStrongestMonth,
-  findWeakestMonth,
   formatCurrency,
-  formatDealSize,
   type Account,
   type TrackingStatus,
 } from '@/config/simulator';
-import { TrendingUp, TrendingDown, Target, BarChart3, Users, Crosshair } from 'lucide-react';
+import { BarChart3, Users } from 'lucide-react';
 
 interface StrategyPanelProps {
   baseline: number[];
   accounts: Account[];
+  oneOffs: Account[];
   goal: number | null;
   startingMRR: number;
   currentMonth: number;
@@ -57,30 +51,21 @@ function statusBgClass(status: TrackingStatus): string {
   return '';
 }
 
-const StrategyPanel = ({ baseline, accounts, goal, startingMRR, currentMonth }: StrategyPanelProps) => {
+const StrategyPanel = ({ baseline, accounts, oneOffs, goal, startingMRR, currentMonth }: StrategyPanelProps) => {
   const effectiveBaseline = baseline.map((b) => b + startingMRR);
 
-  const annualTotal = calcAnnualTotal(effectiveBaseline, accounts);
+  const annualTotal = calcAnnualTotal(effectiveBaseline, accounts, oneOffs);
   const totalBaseline = effectiveBaseline.reduce((a, b) => a + b, 0);
   const totalAdded = annualTotal - totalBaseline;
-  const accountCount = accounts.length;
-
-  const strongestIdx = findStrongestMonth(effectiveBaseline, accounts);
-  const weakestIdx = findWeakestMonth(effectiveBaseline, accounts);
-  const strongestVal = calcMonthlyTotal(effectiveBaseline, accounts, strongestIdx);
-  const weakestVal = calcMonthlyTotal(effectiveBaseline, accounts, weakestIdx);
+  const recurringCount = accounts.length;
+  const oneOffCount = oneOffs.length;
 
   // Goal calculations — only run when goal is valid
   const hasGoal = goal !== null && goal > 0;
-  const gap = hasGoal ? calcRevenueGap(effectiveBaseline, accounts, goal) : 0;
   const overallStatus = hasGoal
-    ? calcTrackingStatus(effectiveBaseline, accounts, goal, currentMonth)
+    ? calcTrackingStatus(effectiveBaseline, accounts, goal, currentMonth, oneOffs)
     : ('none' as TrackingStatus);
-
-  // Deals needed to close gap (using average deal size)
-  const remainingMonths = Math.max(1, 12 - currentMonth);
-  const dealsNeeded = hasGoal ? Math.ceil(gap / AVG_DEAL_SIZE) : 0;
-  const dealsPerMonth = hasGoal ? Math.ceil(dealsNeeded / remainingMonths) : 0;
+  const remaining = hasGoal ? Math.max(0, goal - annualTotal) : 0;
 
   return (
     <div className="space-y-3">
@@ -94,8 +79,8 @@ const StrategyPanel = ({ baseline, accounts, goal, startingMRR, currentMonth }: 
             </span>
           </div>
           <div className="text-xs text-muted-foreground">
-            {gap > 0
-              ? `${formatCurrency(gap)} remaining to goal`
+            {remaining > 0
+              ? `${formatCurrency(remaining)} remaining to goal`
               : 'Goal achieved! 🎯'}
           </div>
         </div>
@@ -111,49 +96,15 @@ const StrategyPanel = ({ baseline, accounts, goal, startingMRR, currentMonth }: 
         />
         <StatRow
           icon={<Users className="w-3.5 h-3.5" />}
-          label="Accounts Added"
-          value={String(accountCount)}
+          label="Recurring Deals"
+          value={String(recurringCount)}
         />
         <StatRow
-          icon={<TrendingUp className="w-3.5 h-3.5" />}
-          label="Strongest Month"
-          value={`${MONTHS[strongestIdx]} · ${formatCurrency(strongestVal)}`}
-          valueClass="revenue-positive"
-        />
-        <StatRow
-          icon={<TrendingDown className="w-3.5 h-3.5" />}
-          label="Weakest Month"
-          value={`${MONTHS[weakestIdx]} · ${formatCurrency(weakestVal)}`}
-          valueClass={accountCount > 0 ? 'text-muted-foreground' : ''}
+          icon={<Users className="w-3.5 h-3.5" />}
+          label="One-Off Deals"
+          value={String(oneOffCount)}
         />
       </div>
-
-      {/* Goal Gap Analysis */}
-      {hasGoal && gap > 0 && (
-        <div className="border-t border-border pt-3 space-y-2">
-          <div className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-            <Crosshair className="w-3 h-3" />
-            To Hit Goal
-          </div>
-          <StatRow
-            icon={<Target className="w-3.5 h-3.5" />}
-            label="Revenue Gap"
-            value={formatCurrency(gap)}
-            valueClass="status-off-track"
-          />
-          <StatRow
-            icon={<Users className="w-3.5 h-3.5" />}
-            label={`Deals Needed (avg ${formatDealSize(AVG_DEAL_SIZE)})`}
-            value={String(dealsNeeded)}
-          />
-          <StatRow
-            icon={<BarChart3 className="w-3.5 h-3.5" />}
-            label="Deals/Month Remaining"
-            value={`${dealsPerMonth}/mo`}
-            valueClass="font-bold"
-          />
-        </div>
-      )}
     </div>
   );
 };
